@@ -1,6 +1,8 @@
 # Data Mode
 
-Data Mode uses data routers such as `createBrowserRouter` and renders with `<RouterProvider>`. It gives an app route objects, loaders, actions, pending UI, fetchers, and SSR primitives without adopting the Framework Vite plugin or route-module file conventions.
+Data Mode uses data routers such as `createBrowserRouter` and renders with `<RouterProvider>`. It gives an app
+route objects, loaders, actions, pending UI, fetchers, and SSR primitives without adopting the Framework Vite
+plugin or route-module file conventions.
 
 Use this reference after the main skill identifies a Data Mode app.
 
@@ -19,7 +21,8 @@ Then use the Data docs under:
 react-router/docs/start/data/
 ```
 
-Those files cover installation, route objects, routing, data loading, actions, navigation, pending UI, and testing. For task-specific details, read relevant files in:
+Those files cover installation, route objects, routing, data loading, actions, navigation, pending UI, and
+testing. For task-specific details, read relevant files in:
 
 ```txt
 react-router/docs/how-to/
@@ -36,19 +39,19 @@ Typical setup:
 import { createBrowserRouter, RouterProvider } from "react-router";
 
 const router = createBrowserRouter([
-  {
-    path: "/",
-    Component: Root,
-    loader: rootLoader,
-    children: [
-      { index: true, Component: Home },
-      {
-        path: "projects/:projectId",
-        Component: Project,
-        loader: projectLoader,
-      },
-    ],
-  },
+	{
+		path: "/",
+		Component: Root,
+		loader: rootLoader,
+		children: [
+			{ index: true, Component: Home },
+			{
+				path: "projects/:projectId",
+				Component: Project,
+				loader: projectLoader,
+			},
+		],
+	},
 ]);
 
 root.render(<RouterProvider router={router} />);
@@ -82,7 +85,8 @@ Rules:
 - Use nested routes for shared layouts and data boundaries.
 - Use index routes for default child content.
 - Use dynamic segments and splats according to route-object docs.
-- Prefer `Component`/`ErrorBoundary` route object properties in Data Mode examples unless the existing app uses `element` consistently.
+- Prefer `Component`/`ErrorBoundary` route object properties in Data Mode examples unless the existing app
+  uses `element` consistently.
 
 ## Data and Mutations
 
@@ -103,9 +107,11 @@ Rules:
 
 Common patterns:
 
-- Validation failure from an action: return `data({ errors, values }, { status: 400 })`, then render errors with `useActionData()` or `fetcher.data`.
+- Validation failure from an action: return `data({ errors, values }, { status: 400 })`, then render errors
+  with `useActionData()` or `fetcher.data`.
 - Missing record in a loader: throw `data("Not Found", { status: 404 })` and render the route `ErrorBoundary`.
-- Search/filter data: parse `new URL(request.url).searchParams` in the loader so the URL is shareable and bookmarkable.
+- Search/filter data: parse `new URL(request.url).searchParams` in the loader so the URL is shareable and
+  bookmarkable.
 
 ## Forms, Fetchers, and Pending UI
 
@@ -145,7 +151,8 @@ Rules:
 
 ## SSR in Data Mode
 
-Data Mode SSR is manual and lower-level than Framework Mode. Before implementing or changing SSR, read the Data Mode custom/SSR docs and match existing server abstractions.
+Data Mode SSR is manual and lower-level than Framework Mode. Before implementing or changing SSR, read the
+Data Mode custom/SSR docs and match existing server abstractions.
 
 Start with:
 
@@ -153,11 +160,13 @@ Start with:
 react-router/docs/start/data/custom.md
 ```
 
-Look for APIs like `createStaticHandler`, `createStaticRouter`, `StaticRouterProvider`, and hydration data handling in the current app before changing anything.
+Look for APIs like `createStaticHandler`, `createStaticRouter`, `StaticRouterProvider`, and hydration data
+handling in the current app before changing anything.
 
 ## RSC Data
 
-If this Data Mode app uses `unstable_RSCRouteConfig`, RSC route config, or low-level RSC server APIs, also read:
+If this Data Mode app uses `unstable_RSCRouteConfig`, RSC route config, or low-level RSC server APIs, also
+read:
 
 ```txt
 references/rsc.md

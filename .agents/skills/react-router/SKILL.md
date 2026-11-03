@@ -1,12 +1,16 @@
 ---
 name: react-router
-description: Build applications with React Router in Framework, Data, Declarative, and unstable RSC modes. Use when configuring routes, route modules, loaders, actions, forms, fetchers, navigation, pending UI, SSR/SPA/pre-rendering, middleware, URL params/search params, or React Router upgrades.
+description:
+    Build applications with React Router in Framework, Data, Declarative, and unstable RSC modes. Use when
+    configuring routes, route modules, loaders, actions, forms, fetchers, navigation, pending UI,
+    SSR/SPA/pre-rendering, middleware, URL params/search params, or React Router upgrades.
 license: MIT
 ---
 
 # React Router
 
-React Router is mode-specific. Before changing an app, identify the mode, load the matching reference, then read the installed docs for the installed package version.
+React Router is mode-specific. Before changing an app, identify the mode, load the matching reference, then
+read the installed docs for the installed package version.
 
 ## Identify the Mode
 
@@ -21,11 +25,13 @@ Use Framework Mode guidance when you see:
 - `app/routes.ts`
 - `app/entry.server.tsx` and/or `app/entry.client.tsx` files
 - route modules under `app/routes/`
-- route exports like `loader`, `action`, `clientLoader`, `clientAction`, `ErrorBoundary`, `meta`, `links`, or `headers`
+- route exports like `loader`, `action`, `clientLoader`, `clientAction`, `ErrorBoundary`, `meta`, `links`, or
+  `headers`
 - imports from `./+types/...`
 - the React Router Vite plugin from `@react-router/dev/vite`
 
-Framework examples usually use the default `app/` directory, but check `react-router.config.ts` for a custom `appDirectory` before assuming exact paths.
+Framework examples usually use the default `app/` directory, but check `react-router.config.ts` for a custom
+`appDirectory` before assuming exact paths.
 
 Then read `references/framework-mode.md`.
 
@@ -35,7 +41,8 @@ Use Data Mode guidance when you see:
 
 - `createBrowserRouter`, `createHashRouter`, `createMemoryRouter`, or `createStaticRouter`
 - `<RouterProvider router={router}>`
-- route objects with properties like `path`, `children`, `loader`, `action`, `Component`, `ErrorBoundary`, or `lazy`
+- route objects with properties like `path`, `children`, `loader`, `action`, `Component`, `ErrorBoundary`, or
+  `lazy`
 - data APIs without the Framework Vite plugin
 
 Then read `references/data-mode.md`.
@@ -53,7 +60,8 @@ Then read `references/declarative-mode.md`.
 
 ### RSC Framework and RSC Data Modes
 
-React Server Components support is unstable and exists in both Framework and Data variants. Use RSC guidance when you see:
+React Server Components support is unstable and exists in both Framework and Data variants. Use RSC guidance
+when you see:
 
 - `unstable_reactRouterRSC`
 - `@vitejs/plugin-rsc`
@@ -62,8 +70,8 @@ React Server Components support is unstable and exists in both Framework and Dat
 - `ServerComponent`, `ServerErrorBoundary`, `ServerLayout`, or `ServerHydrateFallback`
 - React directives or boundary packages such as `"use client"`, `"server-only"`, or `"client-only"`
 
-For RSC Framework, read both `references/framework-mode.md` and `references/rsc.md`.
-For RSC Data, read both `references/data-mode.md` and `references/rsc.md`.
+For RSC Framework, read both `references/framework-mode.md` and `references/rsc.md`. For RSC Data, read both
+`references/data-mode.md` and `references/rsc.md`.
 
 ## Use Installed Docs as Source of Truth
 
@@ -83,7 +91,10 @@ node_modules/react-router/docs/explanation/
 node_modules/react-router/docs/upgrading/
 ```
 
-When this skill references `react-router/docs/...`, read the matching file under `node_modules/react-router/docs/`. If the installed version does not include local docs, use the repo `docs/` directory when working inside the React Router repository; in a consuming app, fall back to version-matched website docs.
+When this skill references `react-router/docs/...`, read the matching file under
+`node_modules/react-router/docs/`. If the installed version does not include local docs, use the repo `docs/`
+directory when working inside the React Router repository; in a consuming app, fall back to version-matched
+website docs.
 
 Most docs include a mode marker near the top:
 
@@ -91,7 +102,8 @@ Most docs include a mode marker near the top:
 [MODES: framework, data, declarative]
 ```
 
-Only apply a doc when its mode marker matches the app mode. If a task spans modes, prefer the section or file that matches the current app.
+Only apply a doc when its mode marker matches the app mode. If a task spans modes, prefer the section or file
+that matches the current app.
 
 RSC is documented primarily in:
 

@@ -1,6 +1,7 @@
 # Declarative Mode
 
-Declarative Mode is React Router's simplest mode. It uses router components like `<BrowserRouter>` and JSX routes with `<Routes>`/`<Route>`. It does not provide loaders, actions, fetchers, or data-router pending UI.
+Declarative Mode is React Router's simplest mode. It uses router components like `<BrowserRouter>` and JSX
+routes with `<Routes>`/`<Route>`. It does not provide loaders, actions, fetchers, or data-router pending UI.
 
 Use this reference after the main skill identifies a Declarative Mode app.
 
@@ -19,7 +20,8 @@ Then use the Declarative docs under:
 react-router/docs/start/declarative/
 ```
 
-Those files cover installation, routing, navigation, and URL values. For conceptual details, read relevant files in:
+Those files cover installation, routing, navigation, and URL values. For conceptual details, read relevant
+files in:
 
 ```txt
 react-router/docs/explanation/
@@ -35,18 +37,18 @@ Typical setup:
 import { BrowserRouter, Routes, Route } from "react-router";
 
 function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="about" element={<About />} />
-        <Route path="dashboard" element={<DashboardLayout />}>
-          <Route index element={<DashboardHome />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
-  );
+	return (
+		<BrowserRouter>
+			<Routes>
+				<Route path="/" element={<Home />} />
+				<Route path="about" element={<About />} />
+				<Route path="dashboard" element={<DashboardLayout />}>
+					<Route index element={<DashboardHome />} />
+					<Route path="settings" element={<Settings />} />
+				</Route>
+			</Routes>
+		</BrowserRouter>
+	);
 }
 ```
 
@@ -120,4 +122,6 @@ Declarative Mode does not have Data/Framework APIs such as:
 - route module exports
 - generated `./+types` route types
 
-If the user asks for route data loading, DB/API-backed data, CRUD, form mutations, validation returned from submissions, revalidation, pending UI, optimistic UI, or fetchers, recommend Data Mode or Framework Mode depending on how much structure they want. Ask before migrating unless they already requested it.
+If the user asks for route data loading, DB/API-backed data, CRUD, form mutations, validation returned from
+submissions, revalidation, pending UI, optimistic UI, or fetchers, recommend Data Mode or Framework Mode
+depending on how much structure they want. Ask before migrating unless they already requested it.
