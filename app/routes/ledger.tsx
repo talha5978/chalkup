@@ -21,13 +21,24 @@ type LedgerRow = Entry & {
 	customerName: string;
 };
 
+const statusLabels: Record<"all" | "open" | "settled", string> = {
+	all: "All status",
+	open: "Open",
+	settled: "Settled",
+};
+
+const directionLabels: Record<"all" | "owes_me" | "i_owe", string> = {
+	all: "All types",
+	owes_me: "They owe me",
+	i_owe: "I owe them",
+};
+
 export const meta = () => [{ title: "Ledger | Chalkup" }];
 
 export default function LedgerPage() {
 	const [rows, setRows] = useState<LedgerRow[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
-	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"all" | "open" | "settled">("all");
 	const [directionFilter, setDirectionFilter] = useState<"all" | "owes_me" | "i_owe">("all");
@@ -59,12 +70,31 @@ export default function LedgerPage() {
 	}, []);
 
 	const filteredRows = useMemo(() => {
-		return rows.filter((row) => {
-			if (statusFilter !== "all" && row.status !== statusFilter) return false;
-			if (directionFilter !== "all" && row.direction !== directionFilter) return false;
-			return true;
-		});
-	}, [rows, statusFilter, directionFilter]);
+		let result = rows;
+
+		// Status filter
+		if (statusFilter !== "all") {
+			result = result.filter((row) => row.status === statusFilter);
+		}
+
+		// Direction filter
+		if (directionFilter !== "all") {
+			result = result.filter((row) => row.direction === directionFilter);
+		}
+
+		// Search (customer name, description, amount)
+		const q = globalFilter.trim().toLowerCase();
+		if (q) {
+			result = result.filter((row) => {
+				const name = row.customerName.toLowerCase();
+				const desc = (row.description ?? "").toLowerCase();
+				const amount = String(row.amount);
+				return name.includes(q) || desc.includes(q) || amount.includes(q);
+			});
+		}
+
+		return result;
+	}, [rows, statusFilter, directionFilter, globalFilter]);
 
 	const columns = useMemo<ColumnDef<typeof stockFeatures, LedgerRow>[]>(
 		() => [
@@ -197,19 +227,14 @@ export default function LedgerPage() {
 		],
 		[],
 	);
-
 	const table = useTable({
 		features: stockFeatures,
 		data: filteredRows,
 		columns,
 		state: {
 			sorting,
-			columnFilters,
-			globalFilter,
 		},
 		onSortingChange: setSorting,
-		onColumnFiltersChange: setColumnFilters,
-		onGlobalFilterChange: setGlobalFilter,
 		initialState: {
 			pagination: { pageSize: 10, pageIndex: 0 },
 			sorting: [{ id: "createdAt", desc: true }],
@@ -278,7 +303,9 @@ export default function LedgerPage() {
 						onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
 					>
 						<SelectTrigger className="w-full sm:w-35">
-							<SelectValue placeholder="Status" />
+							<SelectValue placeholder="Status">
+								{(value) => statusLabels[value as keyof typeof statusLabels] ?? "Status"}
+							</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
 							<SelectItem value="all">All status</SelectItem>
@@ -292,7 +319,11 @@ export default function LedgerPage() {
 						onValueChange={(v) => setDirectionFilter(v as typeof directionFilter)}
 					>
 						<SelectTrigger className="w-full sm:w-40">
-							<SelectValue placeholder="Direction" />
+							<SelectValue placeholder="Direction">
+								{(value) =>
+									directionLabels[value as keyof typeof directionLabels] ?? "Direction"
+								}
+							</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
 							<SelectItem value="all">All types</SelectItem>
