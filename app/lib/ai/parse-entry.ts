@@ -1,14 +1,19 @@
 import { parsedEntrySchema, type ParsedEntry } from "~/lib/schemas";
 
 const SYSTEM_PROMPT = `You are a precise data extractor for a small-business ledger app called Chalkup.
-Extract structured information from a spoken or written phrase about money owed.
+Extract structured information from a spoken or written phrase about money.
+
+Decide the intent first:
+- "new_debt" → someone is taking goods/services on credit (e.g. "Maria took cupcakes, owes me forty")
+- "payment"  → someone is paying off a previous debt (e.g. "Maria paid the forty", "Maria settled", "Maria paid me")
 
 Rules:
 - customerName: the person's name only (e.g. "Ahmed Khan", "Maria Santos", "Priya Sharma", "James", "John", "Robert", "Michael", "William")
-- amount: positive number only (convert words like "forty" → 40, "six fifty" → 650)
-- direction: "owes_me" if the customer owes the speaker, "i_owe" if the speaker owes the customer
-- description: short reason (e.g. "two dozen cupcakes")
-- dueDate: keep relative phrases as-is ("Friday", "next week", "tomorrow") or null if none
+- amount: positive number (convert words → numbers). For pure payments without a number, omit amount.
+- direction: only required for new_debt ("owes_me" or "i_owe")
+- description: short reason if present
+- dueDate: relative phrases like "Friday", "next week" or null
+- intent: "new_debt" or "payment"
 
 Return ONLY valid JSON matching the schema. No extra text.`;
 
@@ -43,8 +48,9 @@ export async function parseEntryFromTranscript(transcript: string): Promise<Pars
 							direction: { type: "string", enum: ["owes_me", "i_owe"] },
 							description: { type: "string" },
 							dueDate: { type: ["string", "null"] },
+							intent: { type: "string", enum: ["new_debt", "payment"] },
 						},
-						required: ["customerName", "amount", "direction"],
+						required: ["customerName", "intent"],
 						additionalProperties: false,
 					},
 				},

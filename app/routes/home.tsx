@@ -1,4 +1,3 @@
-// app/routes/home.tsx
 import { useState, useCallback } from "react";
 import { Mic, Loader2, CheckCircle2, AlertCircle, RotateCcw, Save } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -11,6 +10,8 @@ import { db } from "~/lib/db";
 import { resolveRelativeDate } from "~/lib/dates";
 import type { ParsedEntry } from "~/lib/schemas";
 import { cn } from "~/lib/utils";
+import { getOrCreateCustomer } from "~/lib/customers";
+import type { Direction } from "~/types/db";
 
 type Status = "idle" | "recording" | "processing" | "confirm" | "saving" | "success" | "error";
 
@@ -29,7 +30,7 @@ export default function Home() {
 	// Editable fields on the confirm card
 	const [customerName, setCustomerName] = useState("");
 	const [amount, setAmount] = useState("");
-	const [direction, setDirection] = useState<"owes_me" | "i_owe">("owes_me");
+	const [direction, setDirection] = useState<"owes_me" | "i_owe" | undefined>("owes_me");
 	const [description, setDescription] = useState("");
 	const [dueDateText, setDueDateText] = useState("");
 
@@ -89,10 +90,9 @@ export default function Home() {
 			const p = data.parsed as ParsedEntry;
 			setParsed(p);
 
-			// Pre-fill confirm form
 			setCustomerName(p.customerName);
-			setAmount(String(p.amount));
-			setDirection(p.direction);
+			setAmount(p.amount != null ? String(p.amount) : "");
+			setDirection(p.direction ?? "owes_me");
 			setDescription(p.description ?? "");
 			setDueDateText(p.dueDate ?? "");
 
@@ -111,27 +111,58 @@ export default function Home() {
 	}, [isRecording, stopRecording]);
 
 	const handleConfirmSave = async () => {
-		if (!customerName.trim() || !amount) return;
+		if (!customerName.trim()) return;
 
 		setStatus("saving");
 		try {
 			const now = new Date();
+			const customer = await getOrCreateCustomer(customerName.trim());
+
+			// ---------- PAYMENT ----------
+			if (parsed?.intent === "payment") {
+				// Find open entries for this customer (most recent first)
+				const openEntries = await db.entries
+					.where({ customerId: customer.id, status: "open" })
+					.reverse()
+					.sortBy("createdAt");
+
+				if (openEntries.length === 0) {
+					throw new Error("No open balance found for this customer");
+				}
+
+				const payAmount = amount ? Number(amount) : null;
+
+				if (payAmount && !isNaN(payAmount) && payAmount > 0) {
+					// Settle the most recent matching amount, or the latest open one
+					let remaining = payAmount;
+					for (const entry of openEntries) {
+						if (remaining <= 0) break;
+						if (entry.amount <= remaining) {
+							await db.entries.update(entry.id, {
+								status: "settled",
+								settledAt: now,
+								updatedAt: now,
+							});
+							remaining -= entry.amount;
+						}
+					}
+				} else {
+					// No amount given → settle the latest open entry
+					const latest = openEntries[0];
+					await db.entries.update(latest.id, {
+						status: "settled",
+						settledAt: now,
+						updatedAt: now,
+					});
+				}
+
+				setStatus("success");
+				return;
+			}
+
+			// ---------- NEW DEBT ----------
 			const amt = Number(amount);
 			if (isNaN(amt) || amt <= 0) throw new Error("Invalid amount");
-
-			// Find or create customer (simple exact match for now)
-			let customer = await db.customers.where("name").equalsIgnoreCase(customerName.trim()).first();
-
-			if (!customer) {
-				const id = crypto.randomUUID();
-				customer = {
-					id,
-					name: customerName.trim(),
-					createdAt: now,
-					updatedAt: now,
-				};
-				await db.customers.add(customer);
-			}
 
 			const dueDate = resolveRelativeDate(dueDateText || null);
 
@@ -139,7 +170,7 @@ export default function Home() {
 				id: crypto.randomUUID(),
 				customerId: customer.id,
 				amount: amt,
-				direction,
+				direction: direction as Direction,
 				description: description.trim() || undefined,
 				dueDate,
 				status: "open",
@@ -157,7 +188,7 @@ export default function Home() {
 	};
 
 	return (
-		<div className="min-h-[100dvh] flex flex-col items-center justify-center px-4 py-8 bg-background text-foreground">
+		<div className="min-h-dvh flex flex-col items-center justify-center px-4 py-8 bg-background text-foreground">
 			<div className="w-full max-w-md space-y-8">
 				{/* Header */}
 				<div className="text-center space-y-2">
@@ -224,9 +255,13 @@ export default function Home() {
 				{status === "confirm" && parsed && (
 					<Card>
 						<CardHeader>
-							<CardTitle className="text-lg">Confirm entry</CardTitle>
+							<CardTitle className="text-lg">
+								{parsed.intent === "payment" ? "Confirm payment" : "Confirm entry"}
+							</CardTitle>
 							<CardDescription>
-								Check the details extracted from your voice, then save.
+								{parsed.intent === "payment"
+									? "This will settle open balance(s) for this customer."
+									: "Check the details extracted from your voice, then save."}
 							</CardDescription>
 						</CardHeader>
 
@@ -236,6 +271,18 @@ export default function Home() {
 									“{transcript}”
 								</p>
 							)}
+
+							{/* Intent badge */}
+							<div
+								className={cn(
+									"text-xs font-medium px-2.5 py-1 rounded-full w-fit",
+									parsed.intent === "payment"
+										? "bg-primary/10 text-primary"
+										: "bg-muted text-muted-foreground",
+								)}
+							>
+								{parsed.intent === "payment" ? "Payment / Settlement" : "New debt"}
+							</div>
 
 							<div className="space-y-2">
 								<Label htmlFor="customerName">Customer</Label>
@@ -247,55 +294,62 @@ export default function Home() {
 								/>
 							</div>
 
-							<div className="grid grid-cols-2 gap-3">
-								<div className="space-y-2">
-									<Label htmlFor="amount">Amount</Label>
-									<Input
-										id="amount"
-										type="number"
-										min="0"
-										step="0.01"
-										value={amount}
-										onChange={(e) => setAmount(e.target.value)}
-									/>
-								</div>
-
-								<div className="space-y-2">
-									<Label>Direction</Label>
-									<Select
-										value={direction}
-										onValueChange={(v) => setDirection(v as "owes_me" | "i_owe")}
-									>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="owes_me">They owe me</SelectItem>
-											<SelectItem value="i_owe">I owe them</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							</div>
-
 							<div className="space-y-2">
-								<Label htmlFor="description">Description</Label>
+								<Label htmlFor="amount">
+									Amount{" "}
+									{parsed.intent === "payment" &&
+										"(optional – leave empty to settle latest)"}
+								</Label>
 								<Input
-									id="description"
-									value={description}
-									onChange={(e) => setDescription(e.target.value)}
-									placeholder="What was it for?"
+									id="amount"
+									type="number"
+									min="0"
+									step="0.01"
+									value={amount}
+									onChange={(e) => setAmount(e.target.value)}
 								/>
 							</div>
 
-							<div className="space-y-2">
-								<Label htmlFor="dueDate">Due date</Label>
-								<Input
-									id="dueDate"
-									value={dueDateText}
-									onChange={(e) => setDueDateText(e.target.value)}
-									placeholder="Friday, next week, etc."
-								/>
-							</div>
+							{/* Only show direction + due date for new debts */}
+							{parsed.intent !== "payment" && (
+								<>
+									<div className="space-y-2">
+										<Label>Direction</Label>
+										<Select
+											value={direction}
+											onValueChange={(v) => setDirection(v as "owes_me" | "i_owe")}
+										>
+											<SelectTrigger>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="owes_me">They owe me</SelectItem>
+												<SelectItem value="i_owe">I owe them</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+
+									<div className="space-y-2">
+										<Label htmlFor="description">Description</Label>
+										<Input
+											id="description"
+											value={description}
+											onChange={(e) => setDescription(e.target.value)}
+											placeholder="What was it for?"
+										/>
+									</div>
+
+									<div className="space-y-2">
+										<Label htmlFor="dueDate">Due date</Label>
+										<Input
+											id="dueDate"
+											value={dueDateText}
+											onChange={(e) => setDueDateText(e.target.value)}
+											placeholder="Friday, next week, etc."
+										/>
+									</div>
+								</>
+							)}
 						</CardContent>
 
 						<CardFooter className="flex gap-2">
@@ -305,11 +359,11 @@ export default function Home() {
 							</Button>
 							<Button
 								onClick={handleConfirmSave}
-								disabled={!customerName.trim() || !amount}
+								disabled={!customerName.trim() || (parsed.intent !== "payment" && !amount)}
 								className="flex-1 gap-2"
 							>
 								<Save className="h-4 w-4" />
-								Save
+								{parsed.intent === "payment" ? "Record Payment" : "Save Entry"}
 							</Button>
 						</CardFooter>
 					</Card>
@@ -321,10 +375,13 @@ export default function Home() {
 						<CardContent className="pt-6 space-y-4 text-center">
 							<CheckCircle2 className="h-12 w-12 text-primary mx-auto" />
 							<div>
-								<p className="font-medium">Entry saved</p>
+								<p className="font-medium">
+									{parsed?.intent === "payment" ? "Payment recorded" : "Entry saved"}
+								</p>
 								<p className="text-sm text-muted-foreground mt-1">
-									{customerName} · {direction === "owes_me" ? "owes you" : "you owe"}{" "}
-									{amount}
+									{parsed?.intent === "payment"
+										? `${customerName} – balance updated`
+										: `${customerName} · ${direction === "owes_me" ? "owes you" : "you owe"} ${amount}`}
 								</p>
 							</div>
 							<Button onClick={reset} className="w-full">

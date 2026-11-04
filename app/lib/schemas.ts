@@ -58,13 +58,13 @@ export const updateSettingsSchema = settingsSchema.omit({
 	updatedAt: true,
 });
 
-// Useful for voice/LLM parsing
 export const parsedEntrySchema = z.object({
 	customerName: z.string().min(1),
-	amount: z.number().positive(),
-	direction: directionSchema,
+	amount: z.number().positive().optional(),
+	direction: directionSchema.optional(),
 	description: z.string().optional(),
-	dueDate: z.string().optional(), // keep as string first, resolve later
+	dueDate: z.string().nullable().optional(),
+	intent: z.enum(["new_debt", "payment"]).default("new_debt"),
 });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
