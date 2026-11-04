@@ -4,4 +4,5 @@ export default [
 	index("routes/home.tsx"),
 	route("api/transcribe", "./routes/api.transcribe.ts"),
 	route("api/parse-entry", "./routes/api.parse-entry.ts"),
+	route("ledger", "./routes/ledger.tsx"),
 ] satisfies RouteConfig;
