@@ -5,7 +5,6 @@ import {
 	flexRender,
 	type ColumnDef,
 	type SortingState,
-	type ColumnFiltersState,
 } from "@tanstack/react-table";
 import { Search, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { db } from "~/lib/db";
@@ -61,7 +60,7 @@ export default function LedgerPage() {
 					customerName: customerMap.get(e.customerId)?.name ?? "Unknown",
 				}));
 
-				setRows(joined);
+				setRows(joined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
 			} finally {
 				setLoading(false);
 			}
