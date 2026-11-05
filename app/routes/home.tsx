@@ -10,8 +10,8 @@ import { db } from "~/lib/db";
 import { resolveRelativeDate } from "~/lib/dates";
 import type { ParsedEntry } from "~/lib/schemas";
 import { cn } from "~/lib/utils";
-import { getOrCreateCustomer } from "~/lib/customers";
-import type { Direction } from "~/types/db";
+import { findCustomerMatches, getOrCreateCustomer } from "~/lib/customers";
+import type { Customer, Direction } from "~/types/db";
 
 type Status = "idle" | "recording" | "processing" | "confirm" | "saving" | "success" | "error";
 
@@ -27,12 +27,14 @@ export default function Home() {
 	const [parsed, setParsed] = useState<ParsedEntry | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	// Editable fields on the confirm card
 	const [customerName, setCustomerName] = useState("");
 	const [amount, setAmount] = useState("");
 	const [direction, setDirection] = useState<"owes_me" | "i_owe" | undefined>("owes_me");
 	const [description, setDescription] = useState("");
 	const [dueDateText, setDueDateText] = useState("");
+
+	const [customerMatches, setCustomerMatches] = useState<{ customer: Customer; score: number }[]>([]);
+	const [selectedCustomerId, setSelectedCustomerId] = useState<string | "new">("new");
 
 	const reset = () => {
 		setStatus("idle");
@@ -44,19 +46,19 @@ export default function Home() {
 		setDirection("owes_me");
 		setDescription("");
 		setDueDateText("");
+		setCustomerMatches([]);
+		setSelectedCustomerId("new");
 	};
 
-	const handlePointerDown = useCallback(
-		async (e: React.PointerEvent) => {
-			e.preventDefault();
-			(e.target as HTMLElement).setPointerCapture(e.pointerId);
-
-			if (status === "processing" || status === "recording" || status === "saving") return;
-
+	const handleToggleRecord = useCallback(async () => {
+		// Start recording
+		if (!isRecording && status !== "processing" && status !== "saving") {
 			setStatus("recording");
 			setTranscript(null);
 			setParsed(null);
 			setError(null);
+			setCustomerMatches([]);
+			setSelectedCustomerId("new");
 
 			try {
 				await startRecording();
@@ -64,51 +66,55 @@ export default function Home() {
 				setStatus("error");
 				setError(err instanceof Error ? err.message : "Could not access microphone");
 			}
-		},
-		[status, startRecording],
-	);
-
-	const handlePointerUp = useCallback(async () => {
-		if (!isRecording) return;
-
-		try {
-			setStatus("processing");
-			const blob = await stopRecording();
-			const text = await transcribe(blob);
-			setTranscript(text);
-
-			// Parse with LLM
-			const res = await fetch("/api/parse-entry", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ transcript: text }),
-			});
-
-			const data = await res.json();
-			if (!res.ok) throw new Error(data.error || "Parsing failed");
-
-			const p = data.parsed as ParsedEntry;
-			setParsed(p);
-
-			setCustomerName(p.customerName);
-			setAmount(p.amount != null ? String(p.amount) : "");
-			setDirection(p.direction ?? "owes_me");
-			setDescription(p.description ?? "");
-			setDueDateText(p.dueDate ?? "");
-
-			setStatus("confirm");
-		} catch (err) {
-			setStatus("error");
-			setError(err instanceof Error ? err.message : "Something went wrong");
+			return;
 		}
-	}, [isRecording, stopRecording, transcribe]);
 
-	const handlePointerCancel = useCallback(async () => {
+		// Stop recording → process
 		if (isRecording) {
-			await stopRecording();
-			setStatus("idle");
+			try {
+				setStatus("processing");
+				const blob = await stopRecording();
+				const text = await transcribe(blob);
+				setTranscript(text);
+
+				const res = await fetch("/api/parse-entry", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ transcript: text }),
+				});
+
+				const data = await res.json();
+				if (!res.ok) throw new Error(data.error || "Parsing failed");
+
+				const p = data.parsed as ParsedEntry;
+				setParsed(p);
+
+				setCustomerName(p.customerName);
+				setAmount(p.amount != null ? String(p.amount) : "");
+				setDirection(p.direction ?? "owes_me");
+				setDescription(p.description ?? "");
+				setDueDateText(p.dueDate ?? "");
+
+				const matches = await findCustomerMatches(p.customerName);
+				setCustomerMatches(matches);
+
+				if (matches.length === 0) {
+					setSelectedCustomerId("new");
+				} else if (matches.length === 1 && matches[0].score < 0.35) {
+					setSelectedCustomerId(matches[0].customer.id);
+					setCustomerName(matches[0].customer.name);
+				} else {
+					setSelectedCustomerId(matches[0].customer.id);
+					setCustomerName(matches[0].customer.name);
+				}
+
+				setStatus("confirm");
+			} catch (err) {
+				setStatus("error");
+				setError(err instanceof Error ? err.message : "Something went wrong");
+			}
 		}
-	}, [isRecording, stopRecording]);
+	}, [isRecording, status, startRecording, stopRecording, transcribe]);
 
 	const handleConfirmSave = async () => {
 		if (!customerName.trim()) return;
@@ -116,11 +122,13 @@ export default function Home() {
 		setStatus("saving");
 		try {
 			const now = new Date();
-			const customer = await getOrCreateCustomer(customerName.trim());
+			const customer = await getOrCreateCustomer(
+				customerName.trim(),
+				selectedCustomerId === "new" ? undefined : selectedCustomerId,
+			);
 
 			// ---------- PAYMENT ----------
 			if (parsed?.intent === "payment") {
-				// Find open entries for this customer (most recent first)
 				const openEntries = await db.entries
 					.where({ customerId: customer.id, status: "open" })
 					.reverse()
@@ -133,7 +141,6 @@ export default function Home() {
 				const payAmount = amount ? Number(amount) : null;
 
 				if (payAmount && !isNaN(payAmount) && payAmount > 0) {
-					// Settle the most recent matching amount, or the latest open one
 					let remaining = payAmount;
 					for (const entry of openEntries) {
 						if (remaining <= 0) break;
@@ -147,7 +154,6 @@ export default function Home() {
 						}
 					}
 				} else {
-					// No amount given → settle the latest open entry
 					const latest = openEntries[0];
 					await db.entries.update(latest.id, {
 						status: "settled",
@@ -193,7 +199,7 @@ export default function Home() {
 				{/* Header */}
 				<div className="text-center space-y-2">
 					<h1 className="text-3xl font-bold tracking-tight">Chalkup</h1>
-					<p className="text-muted-foreground text-sm">Hold the button and speak naturally</p>
+					<p className="text-muted-foreground text-sm">Tap the button and speak naturally</p>
 				</div>
 
 				{/* Record Button */}
@@ -201,14 +207,11 @@ export default function Home() {
 					<div className="flex flex-col items-center gap-6">
 						<button
 							type="button"
-							onPointerDown={handlePointerDown}
-							onPointerUp={handlePointerUp}
-							onPointerLeave={handlePointerCancel}
-							onPointerCancel={handlePointerCancel}
+							onClick={handleToggleRecord}
 							disabled={status === "processing" || status === "saving"}
 							className={cn(
 								"relative flex h-36 w-36 items-center justify-center rounded-full",
-								"select-none touch-none transition-all duration-200",
+								"select-none transition-all duration-200",
 								"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 								"disabled:opacity-60 disabled:pointer-events-none",
 								status === "recording"
@@ -227,8 +230,8 @@ export default function Home() {
 						</button>
 
 						<p className="text-sm font-medium text-muted-foreground h-5">
-							{status === "idle" && "Hold to talk"}
-							{status === "recording" && "Listening… release when done"}
+							{status === "idle" && "Tap to talk"}
+							{status === "recording" && "Listening… tap again to stop"}
 							{status === "processing" && "Transcribing & parsing…"}
 							{status === "error" && "Something went wrong"}
 						</p>
@@ -284,14 +287,95 @@ export default function Home() {
 								{parsed.intent === "payment" ? "Payment / Settlement" : "New debt"}
 							</div>
 
+							{/* Customer */}
 							<div className="space-y-2">
 								<Label htmlFor="customerName">Customer</Label>
-								<Input
-									id="customerName"
-									value={customerName}
-									onChange={(e) => setCustomerName(e.target.value)}
-									placeholder="Name"
-								/>
+
+								{/* Case A: No matches → create new */}
+								{customerMatches.length === 0 && (
+									<>
+										<Input
+											id="customerName"
+											value={customerName}
+											onChange={(e) => {
+												setCustomerName(e.target.value);
+												setSelectedCustomerId("new");
+											}}
+											placeholder="Customer name"
+										/>
+										<p className="text-xs text-muted-foreground">
+											No existing customer found — a new one will be created.
+										</p>
+									</>
+								)}
+
+								{/* Case B: Single strong match → use existing */}
+								{customerMatches.length === 1 &&
+									customerMatches[0].score < 0.35 &&
+									selectedCustomerId !== "new" && (
+										<>
+											<Input
+												id="customerName"
+												value={customerMatches[0].customer.name}
+												readOnly
+												className="bg-muted"
+											/>
+											<p className="text-xs text-muted-foreground">
+												Matched existing customer
+											</p>
+										</>
+									)}
+
+								{/* Case C: Ambiguous → Select dropdown */}
+								{(customerMatches.length > 1 ||
+									(customerMatches.length === 1 && customerMatches[0].score >= 0.35)) && (
+									<>
+										<Select
+											value={selectedCustomerId}
+											onValueChange={(value) => {
+												setSelectedCustomerId(value as string | "new");
+												if (value === "new") {
+													setCustomerName(parsed.customerName);
+												} else {
+													const match = customerMatches.find(
+														(m) => m.customer.id === value,
+													);
+													if (match) setCustomerName(match.customer.name);
+												}
+											}}
+										>
+											<SelectTrigger id="customerName" className="w-full">
+												<SelectValue placeholder="Select customer" />
+											</SelectTrigger>
+											<SelectContent>
+												{customerMatches.map(({ customer, score }) => (
+													<SelectItem key={customer.id} value={customer.id}>
+														{customer.name}
+														<span className="ml-2 text-xs text-muted-foreground">
+															({Math.round((1 - score) * 100)}% match)
+														</span>
+													</SelectItem>
+												))}
+												<SelectItem value="new">
+													Create new “{parsed.customerName}”
+												</SelectItem>
+											</SelectContent>
+										</Select>
+
+										{selectedCustomerId === "new" && (
+											<Input
+												value={customerName}
+												onChange={(e) => setCustomerName(e.target.value)}
+												placeholder="New customer name"
+												className="mt-2"
+											/>
+										)}
+
+										<p className="text-xs text-muted-foreground">
+											Multiple possible matches — pick one or create new.
+										</p>
+									</>
+								)}
 							</div>
 
 							<div className="space-y-2">
@@ -310,13 +394,12 @@ export default function Home() {
 								/>
 							</div>
 
-							{/* Only show direction + due date for new debts */}
 							{parsed.intent !== "payment" && (
 								<>
 									<div className="space-y-2">
 										<Label>Direction</Label>
 										<Select
-											value={direction}
+											value={direction == "i_owe" ? "I Owe Them" : "They Owe Me"}
 											onValueChange={(v) => setDirection(v as "owes_me" | "i_owe")}
 										>
 											<SelectTrigger>

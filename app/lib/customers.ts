@@ -1,35 +1,43 @@
 import Fuse from "fuse.js";
-import { db } from "~/lib/db";
+import { db } from "./db";
 import type { Customer } from "~/types/db";
 
-export async function findBestCustomerMatch(
-	name: string,
-): Promise<{ customer: Customer | null; score: number }> {
+export type CustomerMatch = {
+	customer: Customer;
+	score: number;
+};
+
+/** Returns ranked matches under the threshold (best first). */
+export async function findCustomerMatches(name: string, threshold = 0.45): Promise<CustomerMatch[]> {
 	const all = await db.customers.toArray();
-	if (all.length === 0) return { customer: null, score: 1 };
+	if (all.length === 0) return [];
 
 	const fuse = new Fuse(all, {
 		keys: ["name"],
-		threshold: 0.4, // lower = stricter
+		threshold,
 		includeScore: true,
 	});
 
-	const results = fuse.search(name.trim());
-	if (results.length === 0) return { customer: null, score: 1 };
-
-	const best = results[0];
-	return {
-		customer: best.item,
-		score: best.score ?? 1,
-	};
+	return fuse
+		.search(name.trim())
+		.map((r) => ({
+			customer: r.item,
+			score: r.score ?? 1,
+		}))
+		.sort((a, b) => a.score - b.score);
 }
 
-export async function getOrCreateCustomer(name: string): Promise<Customer> {
-	const { customer, score } = await findBestCustomerMatch(name);
+/** Used when the user has already chosen (or only one match / create new). */
+export async function getOrCreateCustomer(name: string, existingId?: string): Promise<Customer> {
+	if (existingId) {
+		const existing = await db.customers.get(existingId);
+		if (existing) return existing;
+	}
 
-	// Good enough match → reuse
-	if (customer && score < 0.35) {
-		return customer;
+	const matches = await findCustomerMatches(name);
+	// Strong single match → reuse
+	if (matches.length === 1 && matches[0].score < 0.35) {
+		return matches[0].customer;
 	}
 
 	// Create new
