@@ -7,7 +7,16 @@ import {
 	type ColumnDef,
 	type SortingState,
 } from "@tanstack/react-table";
-import { Search, ArrowUpDown, ChevronLeft, ChevronRight, ArrowLeft, Bell, Plus } from "lucide-react";
+import {
+	Search,
+	ArrowUpDown,
+	ChevronLeft,
+	ChevronRight,
+	ArrowLeft,
+	Bell,
+	Settings,
+	Plus,
+} from "lucide-react";
 import { db } from "~/lib/db";
 import type { Customer, Entry } from "~/types/db";
 import { Button } from "~/components/ui/button";
@@ -18,6 +27,8 @@ import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 import { RemindDialog, type RemindTarget } from "~/components/remind-dialog";
 import { ManualEntryDialog } from "~/components/manual-entry-dialog";
+import { SettingsDialog } from "~/components/settings-dialog";
+import { formatMoney } from "~/lib/money";
 
 type LedgerRow = Entry & {
 	customerName: string;
@@ -49,34 +60,40 @@ export default function LedgerPage() {
 	const [remindOpen, setRemindOpen] = useState(false);
 	const [remindTarget, setRemindTarget] = useState<RemindTarget | null>(null);
 	const [manualOpen, setManualOpen] = useState(false);
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [currencySymbol, setCurrencySymbol] = useState("Rs");
+
+	const loadRows = async () => {
+		setLoading(true);
+		try {
+			const [entries, customers, settings] = await Promise.all([
+				db.entries.toArray(),
+				db.customers.toArray(),
+				db.getOrCreateSettings(),
+			]);
+
+			setCurrencySymbol(settings.currencySymbol);
+
+			const customerMap = new Map<string, Customer>();
+			customers.forEach((c) => customerMap.set(c.id, c));
+
+			const joined: LedgerRow[] = entries.map((e) => {
+				const customer = customerMap.get(e.customerId);
+				return {
+					...e,
+					customerName: customer?.name ?? "Unknown",
+					phone: customer?.phone,
+				};
+			});
+
+			setRows(joined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	useEffect(() => {
-		async function load() {
-			setLoading(true);
-			try {
-				const [entries, customers] = await Promise.all([
-					db.entries.toArray(),
-					db.customers.toArray(),
-				]);
-
-				const customerMap = new Map<string, Customer>();
-				customers.forEach((c) => customerMap.set(c.id, c));
-
-				const joined: LedgerRow[] = entries.map((e) => {
-					const customer = customerMap.get(e.customerId);
-					return {
-						...e,
-						customerName: customer?.name ?? "Unknown",
-						phone: customer?.phone,
-					};
-				});
-
-				setRows(joined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
-			} finally {
-				setLoading(false);
-			}
-		}
-		load();
+		loadRows();
 	}, []);
 
 	const openRemind = (row: LedgerRow) => {
@@ -154,8 +171,9 @@ export default function LedgerPage() {
 								direction === "owes_me" ? "text-primary" : "text-muted-foreground",
 							)}
 						>
-							{direction === "owes_me" ? "+" : "−"}
-							{amount.toLocaleString()}
+							{formatMoney(amount, currencySymbol, {
+								sign: direction === "owes_me" ? "+" : "−",
+							})}
 						</span>
 					);
 				},
@@ -271,16 +289,14 @@ export default function LedgerPage() {
 				},
 			},
 		],
-		[],
+		[currencySymbol],
 	);
 
 	const table = useTable({
 		features: stockFeatures,
 		data: filteredRows,
 		columns,
-		state: {
-			sorting,
-		},
+		state: { sorting },
 		onSortingChange: setSorting,
 		initialState: {
 			pagination: { pageSize: 10, pageIndex: 0 },
@@ -295,221 +311,202 @@ export default function LedgerPage() {
 		return { owedToMe, iOwe, net: owedToMe - iOwe };
 	}, [filteredRows]);
 
-	const loadRows = async () => {
-		setLoading(true);
-		try {
-			const [entries, customers] = await Promise.all([db.entries.toArray(), db.customers.toArray()]);
-
-			const customerMap = new Map<string, Customer>();
-			customers.forEach((c) => customerMap.set(c.id, c));
-
-			const joined: LedgerRow[] = entries.map((e) => {
-				const customer = customerMap.get(e.customerId);
-				return {
-					...e,
-					customerName: customer?.name ?? "Unknown",
-					phone: customer?.phone,
-				};
-			});
-
-			setRows(joined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	useEffect(() => {
-		loadRows();
-	}, []);
-
 	return (
-		<>
-			<div className="min-h-dvh bg-background text-foreground">
-				<div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
-					{/* Header */}
-					<div className="flex items-start justify-between gap-4">
-						<div className="flex flex-col gap-1">
-							<h1 className="text-2xl font-bold tracking-tight">Ledger</h1>
-							<p className="text-sm text-muted-foreground">All debts and payments</p>
-						</div>
-
-						<div className="flex items-center gap-2 shrink-0">
-							<Button size="sm" className="gap-2" onClick={() => setManualOpen(true)}>
-								<Plus className="h-4 w-4" />
-								Add entry
-							</Button>
-							<Link to="/">
-								<Button variant="outline" size="sm" className="gap-2">
-									<ArrowLeft className="h-4 w-4" />
-									Home
-								</Button>
-							</Link>
-						</div>
+		<div className="min-h-dvh bg-background text-foreground">
+			<div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
+				{/* Header */}
+				<div className="flex items-start justify-between gap-4">
+					<div className="flex flex-col gap-1">
+						<h1 className="text-2xl font-bold tracking-tight">Ledger</h1>
+						<p className="text-sm text-muted-foreground">All debts and payments</p>
 					</div>
 
-					{/* Summary cards */}
-					<div className="grid grid-cols-3 gap-3">
-						<div className="rounded-lg border bg-card p-4">
-							<p className="text-xs text-muted-foreground">Owed to you</p>
-							<p className="text-xl font-semibold text-primary tabular-nums mt-1">
-								+{summary.owedToMe.toLocaleString()}
-							</p>
-						</div>
-						<div className="rounded-lg border bg-card p-4">
-							<p className="text-xs text-muted-foreground">You owe</p>
-							<p className="text-xl font-semibold text-muted-foreground tabular-nums mt-1">
-								−{summary.iOwe.toLocaleString()}
-							</p>
-						</div>
-						<div className="rounded-lg border bg-card p-4">
-							<p className="text-xs text-muted-foreground">Net</p>
-							<p
-								className={cn(
-									"text-xl font-semibold tabular-nums mt-1",
-									summary.net >= 0 ? "text-primary" : "text-destructive",
-								)}
-							>
-								{summary.net >= 0 ? "+" : ""}
-								{summary.net.toLocaleString()}
-							</p>
-						</div>
-					</div>
+					<div className="flex items-center gap-2 shrink-0">
+						<Button size="sm" className="gap-2" onClick={() => setManualOpen(true)}>
+							<Plus className="h-4 w-4" />
+							Add entry
+						</Button>
 
-					{/* Filters */}
-					<div className="flex flex-col sm:flex-row gap-3">
-						<div className="relative flex-1">
-							<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-							<Input
-								placeholder="Search customer or description…"
-								value={globalFilter}
-								onChange={(e) => setGlobalFilter(e.target.value)}
-								className="pl-9"
-							/>
-						</div>
-
-						<Select
-							value={statusFilter}
-							onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
+						<Button
+							variant="outline"
+							size="icon"
+							className="h-8 w-8"
+							onClick={() => setSettingsOpen(true)}
+							aria-label="Settings"
 						>
-							<SelectTrigger className="w-full sm:w-35">
-								<SelectValue placeholder="Status">
-									{(value) => statusLabels[value as keyof typeof statusLabels] ?? "Status"}
-								</SelectValue>
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">All status</SelectItem>
-								<SelectItem value="open">Open</SelectItem>
-								<SelectItem value="settled">Settled</SelectItem>
-							</SelectContent>
-						</Select>
+							<Settings className="h-4 w-4" />
+						</Button>
 
-						<Select
-							value={directionFilter}
-							onValueChange={(v) => setDirectionFilter(v as typeof directionFilter)}
-						>
-							<SelectTrigger className="w-full sm:w-40">
-								<SelectValue placeholder="Direction">
-									{(value) =>
-										directionLabels[value as keyof typeof directionLabels] ?? "Direction"
-									}
-								</SelectValue>
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">All types</SelectItem>
-								<SelectItem value="owes_me">They owe me</SelectItem>
-								<SelectItem value="i_owe">I owe them</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-
-					{/* Table */}
-					<div className="rounded-lg border bg-card overflow-hidden">
-						<Table>
-							<TableHeader>
-								{table.getHeaderGroups().map((headerGroup) => (
-									<TableRow key={headerGroup.id} className="hover:bg-transparent">
-										{headerGroup.headers.map((header) => (
-											<TableHead key={header.id} className="h-11">
-												{header.isPlaceholder
-													? null
-													: flexRender(
-															header.column.columnDef.header,
-															header.getContext(),
-														)}
-											</TableHead>
-										))}
-									</TableRow>
-								))}
-							</TableHeader>
-							<TableBody>
-								{loading ? (
-									<TableRow>
-										<TableCell colSpan={columns.length} className="h-32 text-center">
-											Loading…
-										</TableCell>
-									</TableRow>
-								) : table.getRowModel().rows.length === 0 ? (
-									<TableRow>
-										<TableCell
-											colSpan={columns.length}
-											className="h-32 text-center text-muted-foreground"
-										>
-											No entries found
-										</TableCell>
-									</TableRow>
-								) : (
-									table.getRowModel().rows.map((row) => (
-										<TableRow key={row.id} className="hover:bg-muted/40">
-											{row.getVisibleCells().map((cell) => (
-												<TableCell key={cell.id} className="py-3">
-													{flexRender(
-														cell.column.columnDef.cell,
-														cell.getContext(),
-													)}
-												</TableCell>
-											))}
-										</TableRow>
-									))
-								)}
-							</TableBody>
-						</Table>
-					</div>
-
-					{/* Pagination */}
-					<div className="flex items-center justify-between">
-						<p className="text-sm text-muted-foreground">
-							{table.getFilteredRowModel().rows.length} entr
-							{table.getFilteredRowModel().rows.length === 1 ? "y" : "ies"}
-						</p>
-
-						<div className="flex items-center gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => table.previousPage()}
-								disabled={!table.getCanPreviousPage()}
-							>
-								<ChevronLeft className="h-4 w-4" />
+						<Link to="/">
+							<Button variant="outline" size="sm" className="gap-2">
+								<ArrowLeft className="h-4 w-4" />
+								Home
 							</Button>
-							<span className="text-sm text-muted-foreground tabular-nums">
-								{table.state.pagination.pageIndex + 1} / {table.getPageCount() || 1}
-							</span>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => table.nextPage()}
-								disabled={!table.getCanNextPage()}
-							>
-								<ChevronRight className="h-4 w-4" />
-							</Button>
-						</div>
+						</Link>
 					</div>
 				</div>
 
-				{/* Remind dialog */}
-				<RemindDialog open={remindOpen} onOpenChange={setRemindOpen} target={remindTarget} />
+				{/* Summary cards */}
+				<div className="grid grid-cols-3 gap-3">
+					<div className="rounded-lg border bg-card p-4">
+						<p className="text-xs text-muted-foreground">Owed to you</p>
+						<p className="text-xl font-semibold text-primary tabular-nums mt-1">
+							{formatMoney(summary.owedToMe, currencySymbol, { sign: "+" })}
+						</p>
+					</div>
+					<div className="rounded-lg border bg-card p-4">
+						<p className="text-xs text-muted-foreground">You owe</p>
+						<p className="text-xl font-semibold text-muted-foreground tabular-nums mt-1">
+							{formatMoney(summary.iOwe, currencySymbol, { sign: "−" })}
+						</p>
+					</div>
+					<div className="rounded-lg border bg-card p-4">
+						<p className="text-xs text-muted-foreground">Net</p>
+						<p
+							className={cn(
+								"text-xl font-semibold tabular-nums mt-1",
+								summary.net >= 0 ? "text-primary" : "text-destructive",
+							)}
+						>
+							{formatMoney(Math.abs(summary.net), currencySymbol, {
+								sign: summary.net >= 0 ? "+" : "−",
+							})}
+						</p>
+					</div>
+				</div>
+
+				{/* Filters */}
+				<div className="flex flex-col sm:flex-row gap-3">
+					<div className="relative flex-1">
+						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+						<Input
+							placeholder="Search customer or description…"
+							value={globalFilter}
+							onChange={(e) => setGlobalFilter(e.target.value)}
+							className="pl-9"
+						/>
+					</div>
+
+					<Select
+						value={statusFilter}
+						onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
+					>
+						<SelectTrigger className="w-full sm:w-35">
+							<SelectValue placeholder="Status">
+								{(value) => statusLabels[value as keyof typeof statusLabels] ?? "Status"}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All status</SelectItem>
+							<SelectItem value="open">Open</SelectItem>
+							<SelectItem value="settled">Settled</SelectItem>
+						</SelectContent>
+					</Select>
+
+					<Select
+						value={directionFilter}
+						onValueChange={(v) => setDirectionFilter(v as typeof directionFilter)}
+					>
+						<SelectTrigger className="w-full sm:w-40">
+							<SelectValue placeholder="Direction">
+								{(value) =>
+									directionLabels[value as keyof typeof directionLabels] ?? "Direction"
+								}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All types</SelectItem>
+							<SelectItem value="owes_me">They owe me</SelectItem>
+							<SelectItem value="i_owe">I owe them</SelectItem>
+						</SelectContent>
+					</Select>
+				</div>
+
+				{/* Table */}
+				<div className="rounded-lg border bg-card overflow-hidden">
+					<Table>
+						<TableHeader>
+							{table.getHeaderGroups().map((headerGroup) => (
+								<TableRow key={headerGroup.id} className="hover:bg-transparent">
+									{headerGroup.headers.map((header) => (
+										<TableHead key={header.id} className="h-11">
+											{header.isPlaceholder
+												? null
+												: flexRender(
+														header.column.columnDef.header,
+														header.getContext(),
+													)}
+										</TableHead>
+									))}
+								</TableRow>
+							))}
+						</TableHeader>
+						<TableBody>
+							{loading ? (
+								<TableRow>
+									<TableCell colSpan={columns.length} className="h-32 text-center">
+										Loading…
+									</TableCell>
+								</TableRow>
+							) : table.getRowModel().rows.length === 0 ? (
+								<TableRow>
+									<TableCell
+										colSpan={columns.length}
+										className="h-32 text-center text-muted-foreground"
+									>
+										No entries found
+									</TableCell>
+								</TableRow>
+							) : (
+								table.getRowModel().rows.map((row) => (
+									<TableRow key={row.id} className="hover:bg-muted/40">
+										{row.getVisibleCells().map((cell) => (
+											<TableCell key={cell.id} className="py-3">
+												{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											</TableCell>
+										))}
+									</TableRow>
+								))
+							)}
+						</TableBody>
+					</Table>
+				</div>
+
+				{/* Pagination */}
+				<div className="flex items-center justify-between">
+					<p className="text-sm text-muted-foreground">
+						{table.getFilteredRowModel().rows.length} entr
+						{table.getFilteredRowModel().rows.length === 1 ? "y" : "ies"}
+					</p>
+
+					<div className="flex items-center gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.previousPage()}
+							disabled={!table.getCanPreviousPage()}
+						>
+							<ChevronLeft className="h-4 w-4" />
+						</Button>
+						<span className="text-sm text-muted-foreground tabular-nums">
+							{table.state.pagination.pageIndex + 1} / {table.getPageCount() || 1}
+						</span>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.nextPage()}
+							disabled={!table.getCanNextPage()}
+						>
+							<ChevronRight className="h-4 w-4" />
+						</Button>
+					</div>
+				</div>
 			</div>
+
+			{/* Dialogs */}
+			<RemindDialog open={remindOpen} onOpenChange={setRemindOpen} target={remindTarget} />
 			<ManualEntryDialog open={manualOpen} onOpenChange={setManualOpen} onSaved={loadRows} />
-		</>
+			<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} onSaved={loadRows} />
+		</div>
 	);
 }
