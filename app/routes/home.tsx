@@ -12,6 +12,7 @@ import type { ParsedEntry } from "~/lib/schemas";
 import { cn } from "~/lib/utils";
 import { findCustomerMatches, getOrCreateCustomer } from "~/lib/customers";
 import type { Customer, Direction } from "~/types/db";
+import { Link } from "react-router";
 
 type Status = "idle" | "recording" | "processing" | "confirm" | "saving" | "success" | "error";
 
@@ -477,6 +478,10 @@ export default function Home() {
 				<p className="text-center text-xs text-muted-foreground">
 					Example: “Maria took two dozen cupcakes, owes me forty, pays Friday”
 				</p>
+
+				<Button variant="outline" className="w-full mt-1">
+					<Link to="/ledger">View Ledger</Link>
+				</Button>
 			</div>
 		</div>
 	);

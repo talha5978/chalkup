@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import {
 	useTable,
 	stockFeatures,
@@ -6,7 +7,7 @@ import {
 	type ColumnDef,
 	type SortingState,
 } from "@tanstack/react-table";
-import { Search, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ArrowUpDown, ChevronLeft, ChevronRight, ArrowLeft, Bell } from "lucide-react";
 import { db } from "~/lib/db";
 import type { Customer, Entry } from "~/types/db";
 import { Button } from "~/components/ui/button";
@@ -15,9 +16,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
+import { RemindDialog, type RemindTarget } from "~/components/remind-dialog";
 
 type LedgerRow = Entry & {
 	customerName: string;
+	phone?: string;
 };
 
 const statusLabels: Record<"all" | "open" | "settled", string> = {
@@ -42,7 +45,9 @@ export default function LedgerPage() {
 	const [statusFilter, setStatusFilter] = useState<"all" | "open" | "settled">("all");
 	const [directionFilter, setDirectionFilter] = useState<"all" | "owes_me" | "i_owe">("all");
 
-	// Load data from Dexie
+	const [remindOpen, setRemindOpen] = useState(false);
+	const [remindTarget, setRemindTarget] = useState<RemindTarget | null>(null);
+
 	useEffect(() => {
 		async function load() {
 			setLoading(true);
@@ -55,10 +60,14 @@ export default function LedgerPage() {
 				const customerMap = new Map<string, Customer>();
 				customers.forEach((c) => customerMap.set(c.id, c));
 
-				const joined: LedgerRow[] = entries.map((e) => ({
-					...e,
-					customerName: customerMap.get(e.customerId)?.name ?? "Unknown",
-				}));
+				const joined: LedgerRow[] = entries.map((e) => {
+					const customer = customerMap.get(e.customerId);
+					return {
+						...e,
+						customerName: customer?.name ?? "Unknown",
+						phone: customer?.phone,
+					};
+				});
 
 				setRows(joined.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
 			} finally {
@@ -68,20 +77,28 @@ export default function LedgerPage() {
 		load();
 	}, []);
 
+	const openRemind = (row: LedgerRow) => {
+		setRemindTarget({
+			customerName: row.customerName,
+			amount: row.amount,
+			description: row.description,
+			dueDate: row.dueDate,
+			phone: row.phone,
+		});
+		setRemindOpen(true);
+	};
+
 	const filteredRows = useMemo(() => {
 		let result = rows;
 
-		// Status filter
 		if (statusFilter !== "all") {
 			result = result.filter((row) => row.status === statusFilter);
 		}
 
-		// Direction filter
 		if (directionFilter !== "all") {
 			result = result.filter((row) => row.direction === directionFilter);
 		}
 
-		// Search (customer name, description, amount)
 		const q = globalFilter.trim().toLowerCase();
 		if (q) {
 			result = result.filter((row) => {
@@ -168,8 +185,16 @@ export default function LedgerPage() {
 				cell: ({ row }) => {
 					const date = row.getValue("dueDate") as Date | null;
 					if (!date) return <span className="text-muted-foreground">—</span>;
+
+					const isOverdue = row.original.status === "open" && new Date(date).getTime() < Date.now();
+
 					return (
-						<span className="text-sm tabular-nums">
+						<span
+							className={cn(
+								"text-sm tabular-nums",
+								isOverdue && "text-destructive font-medium",
+							)}
+						>
 							{new Date(date).toLocaleDateString(undefined, {
 								month: "short",
 								day: "numeric",
@@ -223,9 +248,30 @@ export default function LedgerPage() {
 					<span className="text-xs text-muted-foreground capitalize">{row.getValue("source")}</span>
 				),
 			},
+			{
+				id: "actions",
+				header: "",
+				cell: ({ row }) => {
+					const entry = row.original;
+					if (entry.status !== "open") return null;
+
+					return (
+						<Button
+							variant="ghost"
+							size="sm"
+							className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+							onClick={() => openRemind(entry)}
+						>
+							<Bell className="h-3.5 w-3.5" />
+							Remind
+						</Button>
+					);
+				},
+			},
 		],
 		[],
 	);
+
 	const table = useTable({
 		features: stockFeatures,
 		data: filteredRows,
@@ -240,7 +286,6 @@ export default function LedgerPage() {
 		},
 	});
 
-	// Summary numbers
 	const summary = useMemo(() => {
 		const open = filteredRows.filter((r) => r.status === "open");
 		const owedToMe = open.filter((r) => r.direction === "owes_me").reduce((s, r) => s + r.amount, 0);
@@ -252,9 +297,18 @@ export default function LedgerPage() {
 		<div className="min-h-dvh bg-background text-foreground">
 			<div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
 				{/* Header */}
-				<div className="flex flex-col gap-1">
-					<h1 className="text-2xl font-bold tracking-tight">Ledger</h1>
-					<p className="text-sm text-muted-foreground">All debts and payments</p>
+				<div className="flex items-start justify-between gap-4">
+					<div className="flex flex-col gap-1">
+						<h1 className="text-2xl font-bold tracking-tight">Ledger</h1>
+						<p className="text-sm text-muted-foreground">All debts and payments</p>
+					</div>
+
+					<Link to="/">
+						<Button variant="outline" size="sm">
+							<ArrowLeft className="h-4 w-4" />
+							Back to Home
+						</Button>
+					</Link>
 				</div>
 
 				{/* Summary cards */}
@@ -412,6 +466,9 @@ export default function LedgerPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* Remind dialog */}
+			<RemindDialog open={remindOpen} onOpenChange={setRemindOpen} target={remindTarget} />
 		</div>
 	);
 }
