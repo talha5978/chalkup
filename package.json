@@ -10,7 +10,8 @@
 		"typecheck": "react-router typegen && tsc",
 		"format": "prettier --write \"**/*.{js,ts,tsx,jsx,json,md,css,scss}\"",
 		"seed": "tsx scripts/seed.ts",
-		"seed:reset": "tsx scripts/seed.ts --reset"
+		"seed:reset": "tsx scripts/seed.ts --reset",
+		"eval": "tsx scripts/eval.ts"
 	},
 	"lint-staged": {
 		"**/*.{js,ts,tsx,jsx,json,md,css,scss}": [
@@ -45,6 +46,7 @@
 		"@types/node": "^22",
 		"@types/react": "^19.2.18",
 		"@types/react-dom": "^19.2.7",
+		"dotenv": "^18.0.9",
 		"husky": "^9.1.7",
 		"lint-staged": "^17.6.0",
 		"prettier": "^3.9.10",
